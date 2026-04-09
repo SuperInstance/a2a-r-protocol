@@ -226,7 +226,7 @@ class A2ARRouter:
         return True
 
     def broadcast(self, msg_type: str, content: Dict[str, Any],
-                  qos: QoS = QoS.BEST_EFFORT, priority: int = 5):
+                  qos: QoS = QoS.BACKGROUND, priority: int = 5):
         msg = A2RMessage(
             source_id=self.agent_id,
             target_id="broadcast",
