@@ -1,47 +1,101 @@
 # a2a-r-protocol
 
-A2A-R: Agent-to-Agent protocol extensions for real-time robotics operations. Extends Google's A2A with QoS levels, sensor streaming, safety-critical coordination, and latency guarantees.
+A2A-R: **Reliable** Agent-to-Agent protocol — extends Google's A2A with acknowledgments, retries, ordering guarantees, and flow control.
 
-## What A2A-R Adds to A2A
+## What A2A-R Adds
 
-| Feature | A2A Base | A2A-R Extension |
-|---------|----------|-----------------|
-| QoS Levels | None | Safety-critical, Realtime, Interactive, Background |
-| Transport | HTTP/2 | + WebRTC DataChannels, UDP multicast, shared memory |
-| Streaming | None | Sensor, control, video, audio, telemetry, lidar |
-| Coordination | None | Multi-agent planning, formation, leader election |
-| Safety | None | Safety state broadcast, veto system, constraint enforcement |
-| Latency | N/A | Per-message TTL, jitter monitoring, deadline tracking |
+| Feature | A2A Base | A2A-R |
+|---------|----------|-------|
+| Delivery | Fire-and-forget | ACK/NACK with retry tracking |
+| Retries | None | Configurable retries with exponential backoff |
+| Ordering | None | Sequence numbers with gap detection and in-order delivery |
+| Flow Control | None | Sliding window + rate limiting |
+| QoS Levels | None | Best-effort, Acknowledged, Reliable, Ordered |
 
-## Usage
+## Installation
 
-```python
-from protocol import A2ARRouter, AgentCard, QoS, SafetyLevel, CoordinationState
-
-# Create router for local agent
-router = A2ARRouter("vessel-01")
-
-# Handle incoming messages
-router.on("sensor", lambda msg: process_sensor(msg))
-router.on("safety", lambda msg: handle_safety(msg))
-
-# Broadcast fleet state
-msg = router.broadcast("telemetry", {"speed": 5.2, "heading": 270}, qos=QoS.REALTIME)
-
-# Safety veto
-router.set_safety(SafetyLevel.WARNING, conditions=["low_battery"], veto=True)
-
-# Multi-agent coordination
-coord = router.start_coordination("task-42", "leader-01", ["vessel-01", "vessel-02"])
-
-# Agent capability card
-card = AgentCard("vessel-01", "Fishing Vessel Alpha",
-    vessel_type="marine",
-    capabilities=["navigation", "fishing", "autonomy"],
-    sensors=[{"type": "gps"}, {"type": "sonar"}],
-    actuators=[{"type": "thruster"}, {"type": "rudder"}],
-    transport=["http", "webrtc", "dds"],
-    qos_supported=[0, 1, 2, 3])
+```bash
+pip install a2a-r-protocol
 ```
 
-Part of the [Lucineer ecosystem](https://github.com/Lucineer/the-fleet).
+## Quick Start
+
+### Send a reliable message
+
+```python
+from a2a_r_protocol import ReliableSession, ReliableMessage, QoS
+
+# Create a session
+session = ReliableSession("agent-1")
+session.connect("agent-2")
+
+# Send with acknowledgment guarantees
+msg = ReliableMessage(payload={"action": "navigate", "lat": 61.2, "lon": -149.9})
+sent = session.send(msg)
+
+# Handle ACK (on the receiver side)
+session.handle_ack(sent.message_id)
+```
+
+### Multi-agent protocol
+
+```python
+from a2a_r_protocol import A2RProtocol, QoS
+
+protocol = A2RProtocol("vessel-01")
+
+# Create sessions
+protocol.create_session("vessel-02", qos=QoS.ORDERED)
+
+# Register message handlers
+protocol.on("navigate", lambda msg: print(f"Navigate: {msg.payload}"))
+
+# Send
+protocol.send("vessel-02", {"type": "navigate", "heading": 270}, qos=QoS.ORDERED)
+
+# Drive the protocol
+protocol.tick()
+```
+
+### In-order delivery
+
+```python
+from a2a_r_protocol import ReliableMessage, QoS
+
+# Messages arrive out of order but are delivered in sequence
+session = ReliableSession("agent-1", default_qos=QoS.ORDERED)
+session.connect("agent-2")
+
+# Receiver side: messages are buffered until gaps are filled
+msg3 = ReliableMessage(source_id="agent-2", sequence=2, qos=QoS.ORDERED)
+msg1 = ReliableMessage(source_id="agent-2", sequence=0, qos=QoS.ORDERED)
+msg2 = ReliableMessage(source_id="agent-2", sequence=1, qos=QoS.ORDERED)
+
+session.receive(msg3)  # buffered (waiting for 0)
+session.receive(msg1)  # delivers 0
+result = session.receive(msg2)  # delivers 1 and drains buffered 2
+assert len(result) == 2
+```
+
+## Architecture
+
+```
+a2a_r_protocol/
+├── __init__.py       # Public API
+├── message.py        # ReliableMessage, QoS, MessageStatus
+├── ack.py            # AckManager with timeout + retransmission
+├── order.py          # OrderManager with gap detection
+├── session.py        # ReliableSession with flow control
+└── protocol.py       # A2RProtocol multi-agent coordinator
+```
+
+## Development
+
+```bash
+pip install -e ".[dev]"
+pytest tests/ -q
+```
+
+## License
+
+MIT
